@@ -215,6 +215,15 @@ private[cluster] class Reachability private (
 
   def allUnreachableOrTerminated: Set[UniqueAddress] = cache.allUnreachableOrTerminated
 
+  def allUnreachableOrTerminatedExcluding(excludeObservedBy: Set[UniqueAddress]): Set[UniqueAddress] = {
+    if (records.isEmpty)
+      Set.empty
+    else
+      records.collect {
+        case r if !excludeObservedBy(r.observer) && r.status == Unreachable || r.status == Terminated ⇒ r.subject
+      }(breakOut)
+  }
+
   /**
    * Doesn't include terminated
    */

@@ -32,6 +32,48 @@ class GossipSpec extends WordSpec with Matchers {
       Gossip.empty.convergence should be(true)
     }
 
+    "reach convergence for one node" in {
+      val g1 = (Gossip(members = SortedSet(a1))).seen(a1.uniqueAddress)
+      g1.convergence should be(true)
+    }
+
+    "not reach convergence until all have seen version" in {
+      val g1 = (Gossip(members = SortedSet(a1, b1))).seen(a1.uniqueAddress)
+      g1.convergence should be(false)
+    }
+
+    "reach convergence for two nodes" in {
+      val g1 = (Gossip(members = SortedSet(a1, b1))).seen(a1.uniqueAddress).seen(b1.uniqueAddress)
+      g1.convergence should be(true)
+    }
+
+    "reach convergence, skipping joining" in {
+      // e1 is joining
+      val g1 = (Gossip(members = SortedSet(a1, b1, e1))).seen(a1.uniqueAddress).seen(b1.uniqueAddress)
+      g1.convergence should be(true)
+    }
+
+    "reach convergence, skipping down" in {
+      // e3 is down
+      val g1 = (Gossip(members = SortedSet(a1, b1, e3))).seen(a1.uniqueAddress).seen(b1.uniqueAddress)
+      g1.convergence should be(true)
+    }
+
+    "not reach convergence when unreachable" in {
+      val r1 = Reachability.empty.unreachable(b1.uniqueAddress, a1.uniqueAddress)
+      val g1 = (Gossip(members = SortedSet(a1, b1), overview = GossipOverview(reachability = r1)))
+        .seen(a1.uniqueAddress).seen(b1.uniqueAddress)
+      g1.convergence should be(false)
+    }
+
+    "reach convergence when downed node has observed unreachable" in {
+      // e3 is Down
+      val r1 = Reachability.empty.unreachable(e3.uniqueAddress, a1.uniqueAddress)
+      val g1 = (Gossip(members = SortedSet(a1, b1, e3), overview = GossipOverview(reachability = r1)))
+        .seen(a1.uniqueAddress).seen(b1.uniqueAddress).seen(e3.uniqueAddress)
+      g1.convergence should be(true)
+    }
+
     "merge members by status priority" in {
       val g1 = Gossip(members = SortedSet(a1, c1, e1))
       val g2 = Gossip(members = SortedSet(a2, c2, e2))

@@ -236,7 +236,7 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
   var gossipStats = GossipStats()
 
   var seedNodeProcess: Option[ActorRef] = None
-  var seedNodeProcessCounter = 0 // for unique names 
+  var seedNodeProcessCounter = 0 // for unique names
 
   /**
    * Looks up and returns the remote cluster command connection for the specific address.
@@ -752,14 +752,28 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     }
   }
 
+  var count = 0
+
   /**
    * Runs periodic leader actions, such as member status transitions, assigning partitions etc.
    */
   def leaderActions(): Unit =
     if (latestGossip.isLeader(selfUniqueAddress)) {
       // only run the leader actions if we are the LEADER
-      if (latestGossip.convergence)
+      count += 1
+      if (latestGossip.convergence) {
+        count = 0
         leaderActionsOnConvergence()
+      } else if (count > 5) {
+        val downedNodes = latestGossip.members.collect { case m if m.status == Down ⇒ m.uniqueAddress }
+        val unreachable = latestGossip.overview.reachability.allUnreachableOrTerminatedExcluding(downedNodes).map(latestGossip.member)
+        println(s"# leaderActions no convergence, downed: $downedNodes, unreachable $unreachable,\nreachability ${latestGossip.overview.reachability}\n" +
+          s"${unreachable.forall(m ⇒ Gossip.convergenceSkipUnreachableWithMemberStatus(m.status))} && ${!latestGossip.members.exists(m ⇒ Gossip.convergenceMemberStatus(m.status) && !latestGossip.seenByNode(m.uniqueAddress))}\n" +
+          s"members: ${latestGossip.members}\n" +
+          s"seen: ${latestGossip.overview.seen}\n") // FIXME
+        unreachable.forall(m ⇒ Gossip.convergenceSkipUnreachableWithMemberStatus(m.status)) &&
+          !latestGossip.members.exists(m ⇒ Gossip.convergenceMemberStatus(m.status) && !latestGossip.seenByNode(m.uniqueAddress))
+      }
     }
 
   /**
@@ -776,6 +790,7 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
    * 9. Update the state with the new gossip
    */
   def leaderActionsOnConvergence(): Unit = {
+    println(s"# leaderActionsOnConvergence") // FIXME
     val localGossip = latestGossip
     val localMembers = localGossip.members
     val localOverview = localGossip.overview
