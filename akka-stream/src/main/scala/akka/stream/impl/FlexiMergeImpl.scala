@@ -63,6 +63,7 @@ private[akka] class FlexiMergeImpl(_settings: ActorFlowMaterializerSettings,
       if (emitted)
         throw new IllegalStateException("It is only allowed to `emit` zero or one element in response to `onInput`")
       require(primaryOutputs.demandAvailable, "emit not allowed when no demand available")
+      emitted = true
       primaryOutputs.enqueueOutputElement(elem)
     }
 

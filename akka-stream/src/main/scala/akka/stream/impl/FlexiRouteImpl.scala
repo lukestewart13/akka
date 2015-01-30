@@ -73,6 +73,7 @@ private[akka] class FlexiRouteImpl(_settings: ActorFlowMaterializerSettings,
         throw new IllegalStateException("It is only allowed to `emit` at most one element to each output in response to `onInput`")
       require(outputBunch.isPending(output.portIndex),
         s"emit to [$output] not allowed when no demand available")
+      emitted(output.portIndex) = true
       outputBunch.enqueue(output.portIndex, elem)
     }
 
