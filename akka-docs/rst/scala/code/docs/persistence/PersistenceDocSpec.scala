@@ -4,30 +4,20 @@
 
 package docs.persistence
 
-import akka.actor.{ Actor, ActorSystem, Props }
+import akka.actor.{ Actor, ActorRef, ActorSystem, Props }
 import akka.persistence._
 import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
-trait PersistenceDocSpec {
-  val config =
-    """
-      //#auto-update-interval
-      akka.persistence.view.auto-update-interval = 5s
-      //#auto-update-interval
-      //#auto-update
-      akka.persistence.view.auto-update = off
-      //#auto-update
-    """
+
+object PersistenceDocSpec {
 
   trait SomeOtherMessage
 
-  implicit val system: ActorSystem
+  val persistentActor: ActorRef = ???
 
-  import system._
-
-  new AnyRef {
+  object Recovery {
     trait MyPersistentActor1 extends PersistentActor {
       //#recover-on-start-disabled
       override def preStart() = ()
@@ -45,7 +35,6 @@ trait PersistenceDocSpec {
       //#recover-on-start-custom
     }
 
-    val persistentActor = system.deadLetters
     //#recover-explicit
     persistentActor ! Recover()
     //#recover-explicit
@@ -69,7 +58,7 @@ trait PersistenceDocSpec {
     }
   }
 
-  new AnyRef {
+  object NoRecovery {
     trait MyPersistentActor1 extends PersistentActor {
       //#recover-fully-disabled
       override def preStart() = self ! Recover(toSequenceNr = 0L)
@@ -77,7 +66,7 @@ trait PersistenceDocSpec {
     }
   }
 
-  new AnyRef {
+  object PersistenceId {
     trait PersistentActorMethods {
       //#persistence-id
       def persistenceId: String
@@ -101,7 +90,7 @@ trait PersistenceDocSpec {
     }
   }
 
-  new AnyRef {
+  object AtLeastOnce {
     //#at-least-once-example
     import akka.actor.{ Actor, ActorPath }
     import akka.persistence.AtLeastOnceDelivery
@@ -145,7 +134,7 @@ trait PersistenceDocSpec {
     //#at-least-once-example
   }
 
-  new AnyRef {
+  object SaveSnapshot {
 
     class MyPersistentActor extends PersistentActor {
       override def persistenceId = "my-stable-persistence-id"
@@ -164,7 +153,7 @@ trait PersistenceDocSpec {
     }
   }
 
-  new AnyRef {
+  object OfferSnapshot {
     class MyPersistentActor extends PersistentActor {
       override def persistenceId = "my-stable-persistence-id"
 
@@ -183,8 +172,6 @@ trait PersistenceDocSpec {
 
     import akka.actor.Props
 
-    val persistentActor = system.actorOf(Props[MyPersistentActor])
-
     //#snapshot-criteria
     persistentActor ! Recover(fromSnapshot = SnapshotSelectionCriteria(
       maxSequenceNr = 457L,
@@ -192,9 +179,7 @@ trait PersistenceDocSpec {
     //#snapshot-criteria
   }
 
-  new AnyRef {
-
-    val persistentActor = system.actorOf(Props[MyPersistentActor]())
+  object PersistAsync {
 
     //#persist-async
     class MyPersistentActor extends PersistentActor {
@@ -228,9 +213,8 @@ trait PersistenceDocSpec {
 
     //#persist-async
   }
-  new AnyRef {
 
-    val persistentActor = system.actorOf(Props[MyPersistentActor]())
+  object Defer {
 
     //#defer
     class MyPersistentActor extends PersistentActor {
@@ -268,8 +252,11 @@ trait PersistenceDocSpec {
 
     //#defer-caller
   }
-  new AnyRef {
+
+  object View {
     import akka.actor.Props
+
+    val system: ActorSystem = ???
 
     //#view
     class MyView extends PersistentView {
