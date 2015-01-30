@@ -64,7 +64,7 @@ class ReachabilitySpec extends WordSpec with Matchers {
       r.isReachable(nodeA) should be(true)
     }
 
-    "collect unreachable excluding observations from specific (downed) nodes" in {
+    "exclude observations from specific (downed) nodes" in {
       val r = Reachability.empty.
         unreachable(nodeC, nodeA).reachable(nodeC, nodeA).
         unreachable(nodeC, nodeB).
@@ -74,7 +74,7 @@ class ReachabilitySpec extends WordSpec with Matchers {
       r.isReachable(nodeB) should be(false)
       r.isReachable(nodeC) should be(false)
       r.allUnreachableOrTerminated should be(Set(nodeA, nodeB, nodeC))
-      r.allUnreachableOrTerminatedExcluding(Set(nodeB)) should be(Set(nodeB))
+      r.removeObservers(Set(nodeB)).allUnreachableOrTerminated should be(Set(nodeB))
     }
 
     "be pruned when all records of an observer are Reachable" in {
@@ -218,6 +218,20 @@ class ReachabilitySpec extends WordSpec with Matchers {
         unreachable(nodeB, nodeC).
         unreachable(nodeB, nodeE).
         remove(Set(nodeA, nodeB))
+
+      r.status(nodeB, nodeA) should be(Reachable)
+      r.status(nodeC, nodeD) should be(Unreachable)
+      r.status(nodeB, nodeC) should be(Reachable)
+      r.status(nodeB, nodeE) should be(Reachable)
+    }
+
+    "clean untrusted" in {
+      val r = Reachability.empty.
+        unreachable(nodeB, nodeA).
+        unreachable(nodeC, nodeD).
+        unreachable(nodeB, nodeC).
+        unreachable(nodeB, nodeE).
+        cleanObservationsFromThoseWhoThinkImUnreachable(nodeA)
 
       r.status(nodeB, nodeA) should be(Reachable)
       r.status(nodeC, nodeD) should be(Unreachable)

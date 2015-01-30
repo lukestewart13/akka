@@ -187,6 +187,23 @@ private[cluster] class Reachability private (
     }
   }
 
+  def removeObservers(nodes: Set[UniqueAddress]): Reachability = {
+    val newRecords = records.filterNot(r ⇒ nodes(r.observer))
+    if (newRecords.size == records.size) this
+    else {
+      val newVersions = versions -- nodes
+      Reachability(newRecords, newVersions)
+    }
+  }
+
+  def cleanObservationsFromThoseWhoThinkImUnreachable(myNode: UniqueAddress): Reachability = {
+    val untrusted = records.collect {
+      case r if r.subject == myNode && (r.status == Unreachable || r.status == Terminated) ⇒ r.observer
+    }
+    println(s"# $myNode considers unstrusted $untrusted") // FIXME
+    remove(untrusted)
+  }
+
   def status(observer: UniqueAddress, subject: UniqueAddress): ReachabilityStatus =
     observerRows(observer) match {
       case None ⇒ Reachable
@@ -214,15 +231,6 @@ private[cluster] class Reachability private (
   def allUnreachable: Set[UniqueAddress] = cache.allUnreachable
 
   def allUnreachableOrTerminated: Set[UniqueAddress] = cache.allUnreachableOrTerminated
-
-  def allUnreachableOrTerminatedExcluding(excludeObservedBy: Set[UniqueAddress]): Set[UniqueAddress] = {
-    if (records.isEmpty)
-      Set.empty
-    else
-      records.collect {
-        case r if !excludeObservedBy(r.observer) && r.status == Unreachable || r.status == Terminated ⇒ r.subject
-      }(breakOut)
-  }
 
   /**
    * Doesn't include terminated

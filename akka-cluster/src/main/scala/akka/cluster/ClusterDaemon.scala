@@ -237,6 +237,7 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
 
   var seedNodeProcess: Option[ActorRef] = None
   var seedNodeProcessCounter = 0 // for unique names
+  var leaderActionCounter = 0
 
   /**
    * Looks up and returns the remote cluster command connection for the specific address.
@@ -608,9 +609,6 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     } else if (envelope.to != selfUniqueAddress) {
       logInfo("Ignoring received gossip intended for someone else, from [{}] to [{}]", from.address, envelope.to)
       Ignored
-    } else if (!remoteGossip.overview.reachability.isReachable(selfUniqueAddress)) {
-      logInfo("Ignoring received gossip with myself as unreachable, from [{}]", from.address)
-      Ignored
     } else if (!localGossip.overview.reachability.isReachable(selfUniqueAddress, from)) {
       logInfo("Ignoring received gossip from unreachable [{}] ", from)
       Ignored
@@ -623,22 +621,33 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     } else {
       val comparison = remoteGossip.version compareTo localGossip.version
 
+      // FIXME might be better to use own reachability table
+      val cleanRemoteGossip =
+        if (remoteGossip.overview.reachability.isReachable(selfUniqueAddress))
+          remoteGossip
+        else {
+          //          val cleaned = remoteGossip.overview.reachability.cleanObservationsFromThoseWhoThinkImUnreachable(selfUniqueAddress)
+          val cleaned = localGossip.overview.reachability
+          remoteGossip.copy(overview = remoteGossip.overview.copy(reachability = cleaned))
+        }
+
       val (winningGossip, talkback, gossipType) = comparison match {
         case VectorClock.Same ⇒
           // same version
-          (remoteGossip mergeSeen localGossip, !remoteGossip.seenByNode(selfUniqueAddress), Same)
+          (cleanRemoteGossip mergeSeen localGossip, !cleanRemoteGossip.seenByNode(selfUniqueAddress), Same)
         case VectorClock.Before ⇒
           // local is newer
           (localGossip, true, Older)
         case VectorClock.After ⇒
           // remote is newer
-          (remoteGossip, !remoteGossip.seenByNode(selfUniqueAddress), Newer)
+          (cleanRemoteGossip, !cleanRemoteGossip.seenByNode(selfUniqueAddress), Newer)
         case _ ⇒
           // conflicting versions, merge
-          (remoteGossip merge localGossip, true, Merge)
+          (cleanRemoteGossip merge localGossip, true, Merge)
       }
 
       latestGossip = winningGossip seen selfUniqueAddress
+      assert(latestGossip.overview.reachability.isReachable(selfUniqueAddress)) // FIXME remove
 
       // for all new joining nodes we remove them from the failure detector
       latestGossip.members foreach {
@@ -752,27 +761,26 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     }
   }
 
-  var count = 0
-
   /**
    * Runs periodic leader actions, such as member status transitions, assigning partitions etc.
    */
   def leaderActions(): Unit =
     if (latestGossip.isLeader(selfUniqueAddress)) {
       // only run the leader actions if we are the LEADER
-      count += 1
+      val firstNotice = 20
+      val periodicNotice = 60
       if (latestGossip.convergence) {
-        count = 0
+        if (leaderActionCounter >= firstNotice)
+          logInfo("Leader can perform its duties again")
+        leaderActionCounter = 0
         leaderActionsOnConvergence()
-      } else if (count > 5) {
-        val downedNodes = latestGossip.members.collect { case m if m.status == Down ⇒ m.uniqueAddress }
-        val unreachable = latestGossip.overview.reachability.allUnreachableOrTerminatedExcluding(downedNodes).map(latestGossip.member)
-        println(s"# leaderActions no convergence, downed: $downedNodes, unreachable $unreachable,\nreachability ${latestGossip.overview.reachability}\n" +
-          s"${unreachable.forall(m ⇒ Gossip.convergenceSkipUnreachableWithMemberStatus(m.status))} && ${!latestGossip.members.exists(m ⇒ Gossip.convergenceMemberStatus(m.status) && !latestGossip.seenByNode(m.uniqueAddress))}\n" +
-          s"members: ${latestGossip.members}\n" +
-          s"seen: ${latestGossip.overview.seen}\n") // FIXME
-        unreachable.forall(m ⇒ Gossip.convergenceSkipUnreachableWithMemberStatus(m.status)) &&
-          !latestGossip.members.exists(m ⇒ Gossip.convergenceMemberStatus(m.status) && !latestGossip.seenByNode(m.uniqueAddress))
+      } else {
+        leaderActionCounter += 1
+        if (leaderActionCounter == firstNotice || leaderActionCounter % periodicNotice == 0)
+          logInfo("Leader can currently not perform its duties, reachability status: [{}], member status: [{}]",
+            latestGossip.reachabilityExcludingDownedObservers,
+            latestGossip.members.map(m ⇒
+              s"${m.address} ${m.status} seen=${latestGossip.seenByNode(m.uniqueAddress)}").mkString(", "))
       }
     }
 
@@ -790,7 +798,6 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
    * 9. Update the state with the new gossip
    */
   def leaderActionsOnConvergence(): Unit = {
-    println(s"# leaderActionsOnConvergence") // FIXME
     val localGossip = latestGossip
     val localMembers = localGossip.members
     val localOverview = localGossip.overview
@@ -971,7 +978,7 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
 
   def validNodeForGossip(node: UniqueAddress): Boolean =
     (node != selfUniqueAddress && latestGossip.hasMember(node) &&
-      latestGossip.overview.reachability.isReachable(node))
+      latestGossip.reachabilityExcludingDownedObservers.isReachable(node))
 
   def updateLatestGossip(newGossip: Gossip): Unit = {
     // Updating the vclock version for the changes
