@@ -621,14 +621,15 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
     } else {
       val comparison = remoteGossip.version compareTo localGossip.version
 
-      // FIXME might be better to use own reachability table
       val cleanRemoteGossip =
         if (remoteGossip.overview.reachability.isReachable(selfUniqueAddress))
           remoteGossip
         else {
+          // FIXME might be better to use own reachability table
           //          val cleaned = remoteGossip.overview.reachability.cleanObservationsFromThoseWhoThinkImUnreachable(selfUniqueAddress)
-          val cleaned = localGossip.overview.reachability
-          remoteGossip.copy(overview = remoteGossip.overview.copy(reachability = cleaned))
+          //          val cleaned = localGossip.overview.reachability
+          //          remoteGossip.copy(overview = remoteGossip.overview.copy(reachability = cleaned))
+          remoteGossip
         }
 
       val (winningGossip, talkback, gossipType) = comparison match {
@@ -647,7 +648,7 @@ private[cluster] class ClusterCoreDaemon(publisher: ActorRef) extends Actor with
       }
 
       latestGossip = winningGossip seen selfUniqueAddress
-      assert(latestGossip.overview.reachability.isReachable(selfUniqueAddress)) // FIXME remove
+      //      assert(latestGossip.overview.reachability.isReachable(selfUniqueAddress)) // FIXME remove
 
       // for all new joining nodes we remove them from the failure detector
       latestGossip.members foreach {
